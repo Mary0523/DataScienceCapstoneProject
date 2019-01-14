@@ -1,0 +1,211 @@
+---
+title: "Milestone Report"
+author: "Mary0523"
+date: "October 26, 2018"
+output: html_document
+---
+###Project:
+This is a milesstone report for Data Science Capstone. This capstone project is about learning text mining and making a Shiny app for predicting next word with a pharase.  
+This report focus on two tasks:  
+1. Exploratory analysis of the training data set provided by the course;  
+2. Plans for creating a prediction algorithm and Shiny app.
+
+###Code for download data
+
+```{r}
+url<-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+if(!file.exists("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/Coursera-SwiftKey.zip")){
+        download.file(url,destfile = "C:/Users/may/Desktop/DataScience/Data_Science_Capstone/Coursera-SwiftKey.zip",mode = 'wb')
+        unzip("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/Coursera-SwiftKey.zip",
+               exdir ="C:/Users/may/Desktop/DataScience/Data_Science_Capstone")}
+```
+
+###Three files:en_US.blogs.txt, en_US.news.txt, and en_US.twitter.txt exploratory analysis
+
+Count the total number of rows,length of the longest line in each txt file, and total words in each txt file
+```{r,message=FALSE, warning=FALSE}
+library(tm);library(NLP);library(R.utils); library(stringi);library(quanteda);library(readtext);library(stringr);library(SnowballC)
+con_blogs<-file("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.blogs.txt",open="r")
+blogs<-readLines("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.blogs.txt", encoding = 'UTF-8', skipNul = TRUE)
+close(con_blogs)
+
+con_news<-file("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.news.txt",open="r")
+news<-readLines("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.news.txt", encoding = 'UTF-8', skipNul = TRUE)
+close(con_blogs)
+
+con_twitter<-file("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.twitter.txt",open="r")
+twitter<-readLines("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/final/en_US/en_US.twitter.txt", encoding = 'UTF-8', skipNul = TRUE)
+close(con_twitter)
+#remove non-English words
+blogs <- iconv(blogs,"latin1","ASCII",sub = "")
+news <- iconv(news,"latin1","ASCII",sub = "")
+twitter <- iconv(twitter,"latin1","ASCII",sub = "")
+
+nrowblog<-NROW(blogs)
+maxblog<-max(nchar(blogs))
+sumblog<-sum(str_count(blogs, '\\s+')+1)
+
+nrownews<-NROW(news)
+maxnews<-max(nchar(news))
+sumnews<-sum(str_count(news, '\\s+')+1)
+
+nrowtwitter<-NROW(twitter)
+maxtwitter<-max(nchar(twitter))
+sumtwitter<-sum(str_count(twitter, '\\s+')+1)
+
+#group the numbers in to a data frame
+total<-as.data.frame(rbind(c(nrowblog,maxblog,sumblog),
+                           c(nrownews,maxnews,sumnews),
+                           c(nrowtwitter,maxtwitter,sumtwitter)))
+total$data<-c("blogs","news","twitter")
+colnames(total)<-c("number_of_rows","max_length","summary_of_words","data")
+print(total)
+```
+
+###Data cleaning and more detailed exploratory analysis on single words
+
+As the size of the data are huge for exploring purpose we randomly chose 10000 rows from each data and combine them into one.  
+Then we further analysis on the frequencies of the word and word pairs.  
+In our analysis the words length were restricted to 2 to 20 as most meaningful words are in this range
+
+```{r,message=FALSE, warning=FALSE}
+set.seed(1234)
+blogsmall<-sample(blogs,10000)
+newsmall<-sample(news,10000)
+twittersmall<-sample(twitter,10000)
+small<-c(blogsmall,newsmall,twittersmall)
+
+#load the files into a Corpus object
+corpus<-VCorpus(VectorSource(small))
+#writeLines(as.character(docs[[2]]))
+
+#remove websites and emails
+#data cleaning change all words to lower case, remove punctuation, number, profanity, and stopwords
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+corpus <- tm_map(corpus, toSpace, "(f|ht)tp(s?)://(.*)[.][a-z]+")
+corpus <- tm_map(corpus, toSpace, "@[^\\s]+")
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removeWords, stopwords("english"))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+#url<-"https://www.cs.cmu.edu/~biglou/resources/bad-words.txt"
+#download.file(url,destfile ="C:/Users/may/Desktop/DataScience/Data_Science_Capstone/bad-words.txt" )
+bad_wd<-read.table("C:/Users/may/Desktop/DataScience/Data_Science_Capstone/bad-words.txt",header = F)
+colnames(bad_wd)<-c("bad_words")
+corpus <- tm_map(corpus, removeWords, bad_wd[,1])
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, PlainTextDocument)
+```
+*The above analysis was adopted from:https://eight2late.wordpress.com/2015/05/27/a-gentle-introduction-to-text-mining-using-r/
+
+###Distributions of word frequencies  
+(in order to make the figure viewable I cut the freqeuncy of the words to less than or equal to 100)
+
+```{r,message=FALSE, warning=FALSE}
+#create DTM(document term matrix) limit the words lengths to 2 to 20
+dtm <-DocumentTermMatrix(corpus, control=list(wordLengths=c(2, 20)))
+#get the frequency of occurrence of each word in the corpus, we simply sum over all rows to give column sums
+freq<-colSums(as.matrix(dtm))
+freq_data<-subset(data.frame(freq),freq <=100)
+hist(freq_data$freq,breaks=100,col="blue",main="Figure1. Distributions of word frequencies",xlab="Word frequency")
+```
+
+From figure1 we can see that most of the words happened once and very few words repeated more than 20 times.  
+
+###How many unique words do you need in a frequency sorted dictionary to cover 50% of all word instances in the language? 90%?
+```{r,message=FALSE, warning=FALSE}
+#order the data based on frequency
+freq_data<-as.data.frame(freq)
+freq_data$words<-names(freq_data)
+freq_data2<-freq_data[order(freq),]
+#get the row number when sum of the frequncies above the row cover 50% of all word freq 
+sum<-0
+for(i in 1:length(freq_data2$freq)){
+        sum<-sum+freq_data2$freq[i]
+        if (sum>=0.5*sum(freq_data2$freq)) {
+                break
+                }
+}
+print("cover 50%")
+print(i)
+#get the row number when sum of the frequncies above the row cover 90% of all word freq 
+sum<-0
+for(i in 1:length(freq_data2$freq)){
+        sum<-sum+freq_data2$freq[i]
+        if (sum>=0.9*sum(freq_data2$freq)) {
+                break
+        }
+}
+print("cover 90%")
+print(i)
+
+print("Total words")
+sum(freq_data2$freq)
+```
+
+###Data cleaning and more detailed exploratory analysis on n-gram(Bigram, Trigram, and Fourgram)
+
+"an n-gram of size 1 is referred to as a "unigram"; size 2 is a "bigram" (or, less commonly, a "digram"); size 3 is a "trigram". English cardinal numbers are sometimes used, e.g., "four-gram", "five-gram", and so on"" from:https://en.wikipedia.org/wiki/N-gram
+
+```{r,message=FALSE, warning=FALSE}
+UnigramTokenizer <-
+        function(x)
+                unlist(lapply(ngrams(words(x), 1), paste, collapse = " "), use.names = FALSE)
+BigramTokenizer <-
+        function(x)
+                unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+TrigramTokenizer <-
+        function(x)
+                unlist(lapply(ngrams(words(x), 3), paste, collapse = " "), use.names = FALSE)
+
+Unigram_tdm <- TermDocumentMatrix(corpus, control = list(tokenize = UnigramTokenizer))
+Bigram_tdm <- TermDocumentMatrix(corpus, control = list(tokenize = BigramTokenizer))
+Trigram_tdm <- TermDocumentMatrix(corpus, control = list(tokenize = TrigramTokenizer))
+
+uni <- findFreqTerms(Unigram_tdm,lowfreq = 50)
+bi <- findFreqTerms(Bigram_tdm,lowfreq = 20)
+tri <- findFreqTerms(Trigram_tdm,lowfreq = 10)
+
+unifreq <- rowSums(as.matrix(Unigram_tdm[uni,]))
+Unigram_data <- data.frame(word=names(unifreq),frequency=unifreq)
+Unigram_data2<-Unigram_data[with(Unigram_data,order(-frequency)), ]
+Unigram_data2<-data.frame(head(Unigram_data2,20))
+
+bifreq <- rowSums(as.matrix(Bigram_tdm[bi,]))
+Bigram_data <- data.frame(word=names(bifreq),frequency=bifreq)
+Bigram_data2<-Bigram_data[with(Bigram_data,order(-frequency)), ]
+Bigram_data2<-data.frame(head(Bigram_data2,20))
+
+trifreq <- rowSums(as.matrix(Trigram_tdm[tri,]))
+Trigram_data <- data.frame(word=names(trifreq),frequency=trifreq)
+Trigram_data2<-Trigram_data[with(Trigram_data,order(-frequency)), ]
+Trigram_data2<-data.frame(head(Trigram_data2,20))
+
+
+library(ggplot2)
+p1<-ggplot(data=Unigram_data2)+
+        aes(x=reorder(word,-frequency),y=frequency)+
+        geom_bar(stat="identity",fill="blue")+
+        theme(axis.text.x = element_text(color="black", size=14, angle=45,hjust=1))+
+        xlab("Unigrams")
+p1
+p2<-ggplot(data=Bigram_data2)+
+        aes(x=reorder(word,-frequency),y=frequency)+
+        geom_bar(stat="identity",fill="blue")+
+        theme(axis.text.x = element_text(color="black", size=14, angle=45,hjust=1))+
+        xlab("Bigrams")
+p2
+p3<-ggplot(data=Trigram_data2)+
+        aes(x=reorder(word,-frequency),y=frequency)+
+        geom_bar(stat="identity",fill="blue")+
+        theme(axis.text.x = element_text(color="black", size=14, angle=60,hjust=1))+
+        xlab("Trigrams")
+p3
+
+```
+
+*Method was adopted from http://tm.r-forge.r-project.org/faq.html
+
+###Plan for creating a prediction algorithm and Shiny app
+In order to make the Shiny app for words prediction. In the next step I will use all the contents of the three text file: blogs, news, and twitter and clean the data the same way used in this report.
+n-gram model will be used for prediction of the next word based on previous 1, 2, or 3 words. For example, the app will give the top 3 most frequency next word based on the frequency rank in the bigram or trigram list.
